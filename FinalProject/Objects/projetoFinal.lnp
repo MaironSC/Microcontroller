@@ -1,0 +1,5 @@
+".\Objects\STARTUP.obj",
+".\Objects\projetoFinal.obj",
+".\Objects\Funcoes.obj" 
+TO ".\Objects\projetoFinal" 
+PRINT(".\Listings\projetoFinal.m51") RAMSIZE(256) 

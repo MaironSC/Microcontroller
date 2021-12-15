@@ -1,0 +1,273 @@
+C51 COMPILER V9.60.0.0   SENSOR                                                            11/16/2021 09:28:16 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE SENSOR
+OBJECT MODULE PLACED IN .\Objects\Sensor.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE Sensor.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listings\Se
+                    -nsor.lst) TABS(2) OBJECT(.\Objects\Sensor.obj)
+
+line level    source
+
+   1          #include<at89x52.h>
+   2          #include<string.h>
+   3          #include<stdio.h>
+   4          #include<intrins.h> //Biblioteca para usar nop()
+   5          #include<math.h>   
+   6          #include "PID.h"
+   7          
+   8          
+   9          #define DATA P1_1 // Comunicação de dados com sensor
+  10          #define SCK  P1_2 // Porta de clock do sensor
+  11          
+  12          #define noACK 0 // bit de controle de reconhecimento ou não
+  13          #define ACK   1 //
+  14          /*Utilizando como Base a tabela de comando do sensor, considerando adress= 0000*/
+  15                                  //comando     Read(1)/Write(0)
+  16          #define med_umi   0x05 //  0010           1
+  17          #define med_temp  0x03 //  0001           1
+  18          #define reset     0x1e //  1111           0
+  19          #define sts_reg_w 0x06 //  0011           0
+  20          #define sts_reg_r 0x07 //  0011           1
+  21          typedef union { // Define estrutura com váriaveis utilizadas para encontrar/calcular umidade e temperatura
+  22            unsigned int i;
+  23            float f;
+  24          }value;
+  25          enum{TEMP,HUMI};
+  26          char s_write_byte (unsigned char value){ 
+  27   1        // Manda um byte para o sensor e verifica se foi reconhecido 
+  28   1        unsigned char i, erro=0;
+  29   1        for (i=0x80;i>0;i/=2){         // Shift bit para mascarar value
+  30   2          if (i & value) {DATA=1;}     // utilizando i para efetuar uma mascara em value 
+  31   2          else DATA = 0;
+  32   2          _nop_();
+  33   2          SCK = 1;                     //coloca clock em nivel alto
+  34   2          _nop_();                     //pulswith approx. 5 us
+  35   2          _nop_();
+  36   2          _nop_();
+  37   2          SCK =0;                      //baixa nivel clock
+  38   2          _nop_();
+  39   2        }
+  40   1        DATA =1;                       //libera linha de dados
+  41   1        _nop_();
+  42   1        SCK = 1;                       //9º clock para ack
+  43   1        erro = DATA;                   //checa ack (dados serão retirados pelo sensor)
+  44   1        SCK = 0;
+  45   1        return erro;                   //erro=1 em caso de não reconhecimento
+  46   1      }
+  47          
+  48          char s_read_byte (unsigned char ack){
+  49   1        unsigned char i,val=0;
+  50   1        DATA = 1;                 //Libera a linha de dados puxando para 1. 
+  51   1        for (i=0x80;i>0;i/=2){    // Bit de mudança para efetuar mascara
+  52   2          SCK =1;                 // clock do sensor
+  53   2          if (DATA){val =(val | i);} //le o bit
+  54   2          SCK = 0;
+C51 COMPILER V9.60.0.0   SENSOR                                                            11/16/2021 09:28:16 PAGE 2   
+
+  55   2        }
+  56   1        DATA=!ack;              // caso ack == 1 puxa para nivel baixo a linha de dados.
+  57   1        _nop_();
+  58   1        SCK = 1;
+  59   1        _nop_();
+  60   1        _nop_();
+  61   1        _nop_();
+  62   1        SCK = 0;
+  63   1        _nop_();
+  64   1        DATA=1;
+  65   1        return val;             // retorna bit que foi lido
+  66   1      }
+  67          
+  68          void s_transstart(void){
+  69   1      // Gera o início da transmissão
+  70   1      //       _____         ________
+  71   1      // DATA:      |_______|
+  72   1      //           ___     ___
+  73   1      // SCK : ___|   |___|   |______ 
+  74   1        DATA=1;
+  75   1        SCK=0;
+  76   1        _nop_();
+  77   1        SCK=1;
+  78   1        _nop_();
+  79   1        DATA=0;
+  80   1        _nop_();
+  81   1        SCK=0;
+  82   1        _nop_();
+  83   1        _nop_();
+  84   1        _nop_();
+  85   1        SCK=1;
+  86   1        _nop_();
+  87   1        DATA=1;
+  88   1        _nop_();
+  89   1        SCK=0;
+  90   1      }
+  91          //----------------------------------------------------------------------------------
+  92          void s_connectionreset(void){
+  93   1      //----------------------------------------------------------------------------------
+  94   1      // reset comunicação com sensor: DATA-line=1 e pelo menos 9 ciclos em SCK seguido pelo inicio da transmiss
+             -ão
+  95   1      //       _______________________________________________________________________         ________
+  96   1      // DATA:                                                                        |_______|
+  97   1      //          ___    ___    ___    ___    ___    ___    ___    ___    ___        ___     ___      
+  98   1      // SCK : __|   |__|   |__|   |__|   |__|   |__|   |__|   |__|   |__|   |______|   |___|   |______
+  99   1      
+ 100   1        unsigned char i;
+ 101   1        DATA=1; SCK=0;      //Estado inicial para reset
+ 102   1        for(i=0;i<9;i++){  //Efetua os 9 ciclos em SCK
+ 103   2          SCK=1;
+ 104   2          SCK=0;
+ 105   2        }
+ 106   1        s_transstart(); //Inicia Transmissão
+ 107   1      }
+ 108          
+ 109          //----------------------------------------------------------------------------------
+ 110          char s_softreset(void){
+ 111   1      //----------------------------------------------------------------------------------
+ 112   1      // resets the sensor by a softreset
+ 113   1      
+ 114   1        unsigned char error=0;
+ 115   1        s_connectionreset();          //reset communication
+C51 COMPILER V9.60.0.0   SENSOR                                                            11/16/2021 09:28:16 PAGE 3   
+
+ 116   1        error+=s_write_byte(reset);  //send RESET-command to sensor
+ 117   1        return error;                //error=1 in case of no response form the sensor
+ 118   1      } 
+ 119          
+ 120          
+ 121          
+ 122          //----------------------------------------------------------------------------------
+ 123          char s_read_statusreg(unsigned char *p_value, unsigned char *p_checksum){
+ 124   1      //----------------------------------------------------------------------------------
+ 125   1      // le o registrador de status  com  checksum (8-bit)
+ 126   1      
+ 127   1        unsigned char error=0;
+ 128   1        s_transstart();                     //Inicio da transmissão
+ 129   1        error=s_write_byte(sts_reg_r);      //Envia comando para sensor
+ 130   1        *p_value=s_read_byte(ACK);          //Le registrador de status(8-bit)
+ 131   1        *p_checksum=s_read_byte(noACK);     //Le checksum (8-bit)
+ 132   1        return error;                       //error=1 caso não tenha resposta do sensor
+ 133   1      } 
+ 134          
+ 135          //----------------------------------------------------------------------------------
+ 136          char s_write_statusreg(unsigned char *p_value){
+ 137   1      //----------------------------------------------------------------------------------
+ 138   1      // Grava no registro de status o checksum (contendo 8 bits)
+ 139   1      
+ 140   1        unsigned char error=0;
+ 141   1        s_transstart();                   //Inicia Transmissão
+ 142   1        error+=s_write_byte(sts_reg_w);   //envia comando para sensor
+ 143   1        error+=s_write_byte(*p_value);    //Envia o valor do registro de status
+ 144   1        return error;                     //error>=1 caso o sensor não responda
+ 145   1      } 
+ 146          
+ 147          //----------------------------------------------------------------------------------
+ 148          char s_measure(unsigned char *p_value,unsigned char *p_checksum, unsigned char mode){
+ 149   1      //----------------------------------------------------------------------------------
+ 150   1      // faz a medição da umidade e temperatura usando checksum 
+ 151   1      
+ 152   1        unsigned char error=0;
+ 153   1        unsigned int i;
+ 154   1        s_transstart();                           //Start da comunicaçã
+ 155   1        switch(mode){                             //seleciona qual medição vai fazer e envia para sensor sensor
+ 156   2          case TEMP : error+=s_write_byte(med_temp); break;
+ 157   2          case HUMI : error+=s_write_byte(med_umi); break;
+ 158   2          default : break;
+ 159   2        }
+ 160   1        for (i=0;i<65535;i++){
+ 161   2          if(DATA==0) break; //Aguarda Sensor terminar medição, quando sensor finaliza a medição puxa data para ze
+             -ro.
+ 162   2        }
+ 163   1        if(DATA) {error+=1;}             //Ou caso o tempo limite (proximo de 2 seg) é atingido
+ 164   1        *(p_value)  = s_read_byte(ACK);    //le o primeiro byte(MSB)
+ 165   1        *(p_value+1)= s_read_byte(ACK);   //le o segundo byte(LSB)
+ 166   1        *p_checksum = s_read_byte(noACK); //le checksum para indicar final de dados.
+ 167   1        return error; 
+ 168   1      }
+ 169          //----------------------------------------------------------------------------------
+ 170          void calc_sth11(float *p_humidity, float *p_temperature ){ 
+ 171   1      //----------------------------------------------------------------------------------
+ 172   1      // Calculos de temperatura [°C] e umidade [%RH]
+ 173   1      // entrada : umidade [Ticks] (12 bit)
+ 174   1      // temp [Ticks] (14 bit)
+ 175   1      // retorna: umi [%RH]
+ 176   1      // retorna: temp [°C]
+C51 COMPILER V9.60.0.0   SENSOR                                                            11/16/2021 09:28:16 PAGE 4   
+
+ 177   1        const float C1=  -2.0468;                   // for 12 Bit RH
+ 178   1        const float C2=  0.0367;                    // for 12 Bit RH
+ 179   1        const float C3=  -0.0000015955;             // for 12 Bit RH
+ 180   1        const float T1= 0.1;                        // for 12 Bit RH
+ 181   1        const float T2= 0.00008;                    // for 12 Bit RH
+ 182   1        float rh = *p_humidity;                     // rh: umidade 12 Bit
+ 183   1        float t = *p_temperature;                   // t: temperatura 14 Bit
+ 184   1        float rh_lin;                               // rh_lin: umidade linear
+ 185   1        float rh_true;                              // rh_true: umidade compensada pela temperatura
+ 186   1        float t_C;                                  // t_C : temperatura [°C]
+ 187   1        t_C=t*0.01 - 40.1;                          //calc. temperatura [°C]from 14 bit temp.ticks @5V
+ 188   1        rh_lin=C3*rh*rh + C2*rh + C1;               //calc. umidade para interação para [%RH]
+ 189   1        rh_true=(t_C-25)*(T1+T2*rh)+rh_lin;         //calc. umidade compensada pela temperatura [%RH]
+ 190   1      
+ 191   1        if(rh_true>100){rh_true=100;} // Trata dos limites aceitaveis 
+ 192   1        if(rh_true<0.1){rh_true=0.1;} //
+ 193   1        *p_temperature=t_C; //Retorna o valor da temperatura [%RH]
+ 194   1        *p_humidity=rh_true; //Retorna o valor da umidade [%RH]
+ 195   1        
+ 196   1      } 
+ 197          
+ 198          //----------------------------------------------------------------------------------
+ 199          void medidor(){
+ 200   1      //----------------------------------------------------------------------------------
+ 201   1      // Utilizando SHT75 para medir umidade e temperatura, temperatura usada para calculo de precisão da umidad
+             -e
+ 202   1      // 1. Reseta a conexão com o sensor
+ 203   1      // 2. mede a umidade (12 bit) e temperatura(14 bit)
+ 204   1      // 3. Calcula a umidade[%RH] e a temperatura [°C]
+ 205   1      // 4. Mostra no LCD o valor medido em %
+ 206   1          value umi_val,temp_val;
+ 207   1          unsigned char error,checksum;
+ 208   1          unsigned int i;
+ 209   1          char dado[3];
+ 210   1          SCON = 0x52;
+ 211   1          TMOD = 0x20;
+ 212   1          TCON = 0x69;
+ 213   1          TH1 =  0xfd; 
+ 214   1          s_connectionreset();
+ 215   1          _nop_();
+ 216   1          _nop_();
+ 217   1          _nop_();
+ 218   1          _nop_();
+ 219   1          error=0;
+ 220   1          error+=s_measure((unsigned char*) &temp_val.i,&checksum,TEMP);// medição de temp; 
+ 221   1          error+=s_measure((unsigned char*) &umi_val.i,&checksum,HUMI); //medição de umidade
+ 222   1          if(error!=0){ s_connectionreset();}                           //Caso tenha algum erro reseta a coneção
+ 223   1          else{
+ 224   2            umi_val.f=(float)umi_val.i;                                //converte inteiro em float
+ 225   2            temp_val.f=(float)temp_val.i;                              //converte inteiro em float
+ 226   2            calc_sth11(&umi_val.f,&temp_val.f);                        //calcula umidade
+ 227   2            sprintf(dado,"%f",umi_val.f);
+ 228   2            lcd_comm(0x80);                                            // Colocar posição que vai ser mostrado no 
+             -LCD
+ 229   2            _nop_();
+ 230   2            lcd_data(strcat(dado,"%"));
+ 231   2          }
+ 232   1            
+ 233   1            
+ 234   1      //----------wait approx. 0.8s to avoid heating up SHTxx-----------------------------
+ 235   1           for (i=0;i<40000;i++){i=i;} //(be sure that the compiler doesn't eliminate this line!)
+ 236   1      //----------------------------------------------------------------------------------
+C51 COMPILER V9.60.0.0   SENSOR                                                            11/16/2021 09:28:16 PAGE 5   
+
+ 237   1        }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    970    ----
+   CONSTANT SIZE    =      5    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      73
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

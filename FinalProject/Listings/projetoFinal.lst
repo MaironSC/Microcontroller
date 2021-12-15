@@ -1,0 +1,86 @@
+C51 COMPILER V9.60.0.0   PROJETOFINAL                                                      11/17/2021 17:42:16 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE PROJETOFINAL
+OBJECT MODULE PLACED IN .\Objects\projetoFinal.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE projetoFinal.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listi
+                    -ngs\projetoFinal.lst) TABS(2) OBJECT(.\Objects\projetoFinal.obj)
+
+line level    source
+
+   1          #include "PID.h"
+   2          unsigned int temp = 0;
+   3          volatile float flics = 0;
+   4          volatile int start =0;
+   5          
+   6          void main()
+   7          {
+   8   1        float umi;
+   9   1        float w;
+  10   1        int error_ctrl=2, prev_error_ctrl=1;
+  11   1        char x_out[3];
+  12   1        int cont;
+  13   1        //char mensagemInicial[] = "Sistema iniciado";
+  14   1        EA  = 1; // Habilita interrupções
+  15   1        IE0 = 1; // Habilita 
+  16   1        EX0 = 1; // Habilita interrupção externa 0
+  17   1        out = 0;
+  18   1        
+  19   1        while(1)
+  20   1        {       
+  21   2          if(start == 1){
+  22   3            lcd_init();
+  23   3            delay_ms(1000);
+  24   3            lcd_clear();
+  25   3            cont = 1;
+  26   3            break;
+  27   3          }
+  28   2        }
+  29   1        contaRPS();
+  30   1        while (1){
+  31   2            umi=medidor(); // reaproveita variavel para poupar memoria.
+  32   2            w =(flics)/60;// Divide por 60 pois temos 60 pulsos por revolução
+  33   2            if (w > 0.3)
+  34   2            {
+  35   3              w=w-0.3;
+  36   3            } // trata do erro inicial
+  37   2            else 
+  38   2            {
+  39   3              w=0;
+  40   3            }
+  41   2            if (umi < (float)20 )
+  42   2            {
+  43   3              out = 0xff;
+  44   3            }
+  45   2            else if (umi > 20  && umi < 70 )
+  46   2            {
+  47   3              out = 0x0F;
+  48   3            }
+  49   2            else 
+  50   2            if(umi > 70 )
+  51   2            {
+  52   3              out = 0x00;
+  53   3            }
+  54   2            lcd_comm(0xC0);
+C51 COMPILER V9.60.0.0   PROJETOFINAL                                                      11/17/2021 17:42:16 PAGE 2   
+
+  55   2            lcd_data("W (RPS):");
+  56   2            lcd_comm(0xc9);
+  57   2            sprintf(x_out,"%0.1f",w);
+  58   2            lcd_data(x_out);
+  59   2        } 
+  60   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    307    ----
+   CONSTANT SIZE    =     15    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      8      17
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
